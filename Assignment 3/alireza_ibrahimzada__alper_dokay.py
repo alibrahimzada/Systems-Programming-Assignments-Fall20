@@ -1,5 +1,6 @@
 import sys
 import math
+import json
 
 hex_binary = {'0': '0000', '1': '0001', '2': '0010', '3': '0011', '4': '0100', '5': '0101', '6': '0110', '7': '0111', 
               '8': '1000', '9': '1001', 'A': '1010', 'B': '1011', 'C': '1100', 'D': '1101', 'E': '1110', 'F': '1111'}
@@ -9,8 +10,8 @@ configs = {'L1 #sets': 0, 'L1 lines/set': 0, 'L1 block size': 0,
 
 eviction_queue = {}
 
-performance = {'L1 instruction hits': 0, 'L1 instruction misses': 0, 'L1 instruction evictions': 0,
-			   'L1 data hits': 0, 'L1 data misses': 0, 'L1 data evictions': 0,
+performance = {'L1I hits': 0, 'L1I misses': 0, 'L1I evictions': 0,
+			   'L1D hits': 0, 'L1D misses': 0, 'L1D evictions': 0,
 			   'L2 hits': 0, 'L2 misses': 0, 'L2 evictions': 0}
 
 def parse_arguments(args):
@@ -121,5 +122,20 @@ def main():
 
 			elif trace[0] == 'M':   # data load and then data store
 				data = trace[3]
+
+	# printing the performance of each cache at the end of trace
+	print('L1I-hits:{} L1I-misses:{} L1I-evictions:{}'.format(performance['L1I hits'], performance['L1I misses'], performance['L1I evictions']))
+	print('L1D-hits:{} L1D-misses:{} L1D-evictions:{}'.format(performance['L1D hits'], performance['L1D misses'], performance['L1D evictions']))
+	print('L2-hits:{} L2-misses:{} L2-evictions:{}'.format(performance['L2 hits'], performance['L2 misses'], performance['L2 evictions']))
+
+	# exporting the content of caches to separate files
+	with open('L1-instruction.txt', 'w') as fw:
+		json.dump(L1_instruction, fw, indent=4, sort_keys=True)
+
+	with open('L1-data.txt', 'w') as fw:
+		json.dump(L1_data, fw, indent=4, sort_keys=True)
+
+	with open('L2.txt', 'w') as fw:
+		json.dump(L2_cache, fw, indent=4, sort_keys=True)
 
 main()
