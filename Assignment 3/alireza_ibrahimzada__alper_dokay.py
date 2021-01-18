@@ -117,6 +117,8 @@ def post_normalize_tag(tag_value, tag_length):
 	return new_tag_value
 
 def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
+	## ALPER, IN LOAD IN ORDER TO MAKE PRINTS CONSISTENT WITH BIROL WANTS. PLEASE SEE THE MANUAL. MISSES ARE 
+	## BEING PRINTED IN LINE 1, THEN PLACE IN L2, THEN PLACE IN L1D/I. THANKS.
 	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address
 	binary_value = hex_to_bin(address)   # converting the hexadecimal address to its binary form
 
@@ -151,9 +153,11 @@ def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 				break
 
 	if isFound:
+		print(cache_name + ' hit, ', end='')
 		performance[cache_name + ' hits'] += 1
 				
 	else:
+		print(cache_name + ' miss, ', end='')
 		performance[cache_name + ' misses'] += 1
 		line_number = ''
 
@@ -163,7 +167,6 @@ def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 				break
 					
 		if line_number != '':   # if there exists an empty line, then:
-			# alper when loading to L1, we can also handle loading to L2 here
 			L1_cache[set_value_l1][line_number]['v_bit'] = 1
 			L1_cache[set_value_l1][line_number]['tag'] = tag_hex_l1
 			L1_cache[set_value_l1][line_number]['time'] += 1
@@ -219,9 +222,11 @@ def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 				break
 
 	if isFound:
+		print('L2 hit, ')
 		performance['L2 hits'] += 1
 
 	else:
+		print('L2 miss')
 		performance['L2 misses'] += 1
 		line_number = ''
 
@@ -263,6 +268,9 @@ def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 
 	# Looking for L2 - end
 
+def store(aligned_ram, address, size, data, L1_data, L2_cache):
+	pass
+
 def main():
 	L1_data = {}
 	L1_instruction = {}
@@ -284,6 +292,7 @@ def main():
 
 	with open(trace_file) as tf:
 		for line in tf:
+			print(line, end='')
 			trace = line.replace(',', '').strip().split()
 			address = trace[1]
 			size = trace[2]
@@ -295,13 +304,13 @@ def main():
 
 			elif trace[0] == 'S':   # data store
 				data = trace[3]
+				store(aligned_ram, address, size, data, L1_data, L2_cache)
 
 			elif trace[0] == 'M':   # data load and then data store
 				data = trace[3]
 	
-	#print(aligned_ram)
 	# printing the performance of each cache at the end of trace
-	print('L1I-hits:{} L1I-misses:{} L1I-evictions:{}'.format(performance['L1I hits'], performance['L1I misses'], performance['L1I evictions']))
+	print('\nL1I-hits:{} L1I-misses:{} L1I-evictions:{}'.format(performance['L1I hits'], performance['L1I misses'], performance['L1I evictions']))
 	print('L1D-hits:{} L1D-misses:{} L1D-evictions:{}'.format(performance['L1D hits'], performance['L1D misses'], performance['L1D evictions']))
 	print('L2-hits:{} L2-misses:{} L2-evictions:{}'.format(performance['L2 hits'], performance['L2 misses'], performance['L2 evictions']))
 
@@ -316,5 +325,3 @@ def main():
 	# 	json.dump(L2_cache, fw, indent=4, sort_keys=True)
 
 main()
-
-
