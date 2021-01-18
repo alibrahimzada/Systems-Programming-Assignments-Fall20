@@ -132,6 +132,8 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 	# Looking for L1I - Start
 	isFound = False
 	foundItem = ()
+	# TODO: Check if set exists
+	# TODO: Starting address should be fetched from block decimal
 	for set_num, line_values in L1_instruction.items():
 		for line_num, cache_value in line_values.items():
 			if cache_value['tag'] == tag_hex and cache_value['v_bit'] == 1:
@@ -142,7 +144,7 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 		performance['L1I hits'] += 1
 		L1_instruction[foundItem[0]][foundItem[1]]['v_bit'] = 1
 		L1_instruction[foundItem[0]][foundItem[1]]['tag'] = tag_hex
-		L1_instruction[foundItem[0]][foundItem[1]]['time'] = L1I_time
+		L1_instruction[foundItem[0]][foundItem[1]]['time'] += 1  #no need for a variable
 		j = 0
 		for i in range(0, int(size)*2, 2):
 			L1_instruction[foundItem[0]][foundItem[1]]['block'][j] = data[i:i+2]
@@ -275,7 +277,7 @@ def main():
 				instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1D_time, L2_time)
 				
 				print(L1_instruction)
-				print(L2_cache)
+				#print(L2_cache)
 
 			elif trace[0] == 'L':   # data load
 				pass
