@@ -66,7 +66,7 @@ def create_cache(total_sets, total_lines, block_size, cache, cache_name):
 	return cache
 
 def normalize_address(decimal_address):
-	hex_address = list(hex(decimal_address))[2:]   # clean the hex value from initial 0x
+	hex_address = list(hex(decimal_address).upper())[2:]   # clean the hex value from initial 0x
 	while len(hex_address) != 8:
 		hex_address.insert(0, '0')
 	return ''.join(hex_address)
@@ -118,135 +118,149 @@ def post_normalize_tag(tag_value, tag_length):
 
 def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address
-	data = aligned_ram[address]   # retrieving the data from the RAM
-	set_block_index_sum = configs['L1 #setBits'] + configs['L1 #blockBits']   # adding the total number of bits for set and block
 	binary_value = hex_to_bin(address)   # converting the hexadecimal address to its binary form
-	tag_binary = str(binary_value[:len(binary_value)-set_block_index_sum])   # extracting the binary tag from the address
-	set_value = '0'
+
+	if len(binary_value) != 32:
+		binary_value = (32 - len(binary_value)) * '0' + binary_value
+
+	hexAddress = bin_to_hex(binary_value)  # taking the address in hex format
+	data = aligned_ram[hexAddress]   # retrieving the data from the RAM
+
+	# L1 cache based variable declarations - Start
+	set_block_index_sum_l1 = configs['L1 #setBits'] + configs['L1 #blockBits']   # adding the total number of bits for set and block
+	tag_binary_l1 = str(binary_value[:len(binary_value)-set_block_index_sum_l1])   # extracting the binary tag from the address
+	set_value_l1 = '0'
+	block_value_l1 = int(bin_to_dec(str(binary_value[-configs['L1 #blockBits']:])))
 
 	if configs['L1 #setBits'] != 0:   # checking if there is a bit to represent set
-		set_value = str(binary_value[-set_block_index_sum:-configs['L1 #blockBits']])
-		set_value = bin_to_dec(set_value)
+		set_value_l1 = str(binary_value[-set_block_index_sum_l1:-configs['L1 #blockBits']])
+		set_value_l1 = bin_to_dec(set_value_l1)
 
-	block_value = str(binary_value[-configs['L1 #blockBits']:])
+	tag_binary_l1 = post_normalize_tag(tag_binary_l1, 32 - set_block_index_sum_l1)
+	tag_hex_l1 = bin_to_hex(tag_binary_l1)
+	# L1 cache based variable declarations - End
 
-	tag_binary = post_normalize_tag(tag_binary, 32 - set_block_index_sum)
-	tag_hex = bin_to_hex(tag_binary)
 
-	# Looking for L1I - Start
+	# Looking for L1 - Start
 	isFound = False
-	foundItem = '0'
-	# TODO: Check if set exists
 	# TODO: Starting address should be fetched from block decimal
-	if set_value in L1_cache:
-		for line_num, cache_value in L1_cache[set_value].items():
-			if cache_value['tag'] == tag_hex and cache_value['v_bit'] == 1:
+	if set_value_l1 in L1_cache:
+		for line_num, cache_value in L1_cache[set_value_l1].items():
+			if cache_value['tag'] == tag_hex_l1 and cache_value['v_bit'] == 1:
 				isFound = True
-				found_line = line_num
+				break
 
 	if isFound:
 		performance[cache_name + ' hits'] += 1
-		# alper when its a hit, we don't need to set everything again. the rest of this block is not necessary
-		L1_cache[set_value][found_line]['v_bit'] = 1
-		L1_cache[set_value][found_line]['tag'] = tag_hex
-		L1_cache[set_value][found_line]['time'] += 1
-		j = 0
-		for i in range(0, int(size)*2, 2):
-			L1_cache[set_value][found_line]['block'][j] = data[i:i+2]
-			j += 1
 				
 	else:
 		performance[cache_name + ' misses'] += 1
 		line_number = ''
 
-		for line_num, value in L1_cache[set_value].items():   # this condition will check if there is an empty line available
+		for line_num, value in L1_cache[set_value_l1].items():   # this condition will check if there is an empty line available
 			if value['v_bit'] == 0:
 				line_number = line_num
 				break
 					
 		if line_number != '':   # if there exists an empty line, then:
 			# alper when loading to L1, we can also handle loading to L2 here
-			L1_cache[set_value][line_number]['v_bit'] = 1
-			L1_cache[set_value][line_number]['tag'] = tag_hex
-			L1_cache[set_value][line_number]['time'] += 1
+			L1_cache[set_value_l1][line_number]['v_bit'] = 1
+			L1_cache[set_value_l1][line_number]['tag'] = tag_hex_l1
+			L1_cache[set_value_l1][line_number]['time'] += 1
 
 			j = 0
 			for i in range(0, len(data), 2):
-				L1_instruction[set_value][line_number]['block'][j] = data[i:i+2]
+				L1_cache[set_value_l1][line_number]['block'][j] = data[i:i+2]
 				j += 1
 
-			eviction_queue[cache_name][set_value].append(line_number)
+			eviction_queue[cache_name][set_value_l1].append(line_number)
 
 		else:   # if there are no empty lines, then an eviction happens
 			performance[cache_name + ' evictions'] += 1
-			line_number = eviction_queue[cache_name][set_value].pop(0)
+			line_number = eviction_queue[cache_name][set_value_l1].pop(0)
 			# alper we should use <del> here to delete the key-value pair of poped line
-			L1_cache[set_value][line_number]['v_bit'] = 1
-			L1_cache[set_value][line_number]['tag'] = tag_hex
-			L1_cache[set_value][line_number]['time'] += 1
+			L1_cache[set_value_l1][line_number]['v_bit'] = 1
+			L1_cache[set_value_l1][line_number]['tag'] = tag_hex_l1
+			L1_cache[set_value_l1][line_number]['time'] += 1
 
-			j = 0
-			for i in range(0, int(size)*2, 2):
-				L1_cache[set_value][line_number]['block'][j] = data[i:i+2]
-				j += 1
+			j = block_value_l1
+			for i in range(block_value_l1*2, block_value_l1*2 + int(size)*2, 2):
+				if i < len(data):
+					L1_cache[set_value_l1][line_number]['block'][j] = data[i:i+2]
+					j += 1
+					continue
+				break
 
-			eviction_queue[cache_name][set_value].append(line_number)
+			eviction_queue[cache_name][set_value_l1].append(line_number)
 	# Looking for L1I - End
 
 	# Looking for L2 - Start
 
-	# alper, the looking for L2 can be handled in the above code. we dont need this part
+	# L2 cache based variable declarations - Start
+	set_block_index_sum_l2 = configs['L2 #setBits'] + configs['L2 #blockBits']   # adding the total number of bits for set and block
+	tag_binary_l2 = str(binary_value[:len(binary_value)-set_block_index_sum_l2])   # extracting the binary tag from the address
+	set_value_l2 = '0'
+	block_value_l2 = int(bin_to_dec(str(binary_value[-configs['L2 #blockBits']:])))
+
+	if configs['L2 #setBits'] != 0:   # checking if there is a bit to represent set
+		set_value_l2 = str(binary_value[-set_block_index_sum_l2:-configs['L2 #blockBits']])
+		set_value_l2 = bin_to_dec(set_value_l2)
+
+	tag_binary_l2 = post_normalize_tag(tag_binary_l2, 32 - set_block_index_sum_l2)
+	tag_hex_l2 = bin_to_hex(tag_binary_l2)
+	# L2 cache based variable declarations - End
+
 	isFound = False
-	foundItem = ()
-	for set_num, line_values in L2_cache.items():
-		for line_num, cache_value in line_values.items():
-			if cache_value['tag'] == tag_hex and cache_value['v_bit'] == 1:
+	# TODO: Starting address should be fetched from block decimal
+	if set_value_l2 in L2_cache:
+		for line_num, cache_value in L2_cache[set_value_l2].items():
+			if cache_value['tag'] == tag_hex_l2 and cache_value['v_bit'] == 1:
 				isFound = True
-				foundItem = (set_num, line_num)
+				break
 
 	if isFound:
 		performance['L2 hits'] += 1
-		L2_cache[foundItem[0]][foundItem[1]]['v_bit'] = 1
-		L2_cache[foundItem[0]][foundItem[1]]['tag'] = tag_hex
-		L2_cache[foundItem[0]][foundItem[1]]['time'] += 1
-		j = 0
-		for i in range(0, int(size)*2, 2):
-			L2_cache[foundItem[0]][foundItem[1]]['block'][j] = data[i:i+2]
-			j += 1
 
 	else:
 		performance['L2 misses'] += 1
 		line_number = ''
 
-		for line_num, value in L2_cache[set_value].items():
+		for line_num, value in L2_cache[set_value_l2].items():   # this condition will check if there is an empty line available
 			if value['v_bit'] == 0:
 				line_number = line_num
 				break
 					
-		if line_number != '':
-			L2_cache[set_value][line_number]['v_bit'] = 1
-			L2_cache[set_value][line_number]['tag'] = tag_hex
-			L2_cache[set_value][line_number]['time'] += 1
+		if line_number != '':   # if there exists an empty line, then:
+			L2_cache[set_value_l2][line_number]['v_bit'] = 1
+			L2_cache[set_value_l2][line_number]['tag'] = tag_hex_l2
+			L2_cache[set_value_l2][line_number]['time'] += 1
 
 			j = 0
 			for i in range(0, len(data), 2):
-				L2_cache[set_value][line_number]['block'][j] = data[i:i+2]
+				L2_cache[set_value_l2][line_number]['block'][j] = data[i:i+2]
 				j += 1
 
-			eviction_queue['L2'][set_value].append(line_number)
-		else:
+			eviction_queue['L2'][set_value_l2].append(line_number)
+
+		else:   # if there are no empty lines, then an eviction happens
 			performance['L2 evictions'] += 1
-			line_number = eviction_queue['L2'][set_value].pop(0)
-			L2_cache[set_value][line_number]['v_bit'] = 1
-			L2_cache[set_value][line_number]['tag'] = tag_hex
-			L2_cache[set_value][line_number]['time'] += 1
+			line_number = eviction_queue['L2'][set_value_l2].pop(0)
+			# alper we should use <del> here to delete the key-value pair of poped line
+			L2_cache[set_value_l2][line_number]['v_bit'] = 1
+			L2_cache[set_value_l2][line_number]['tag'] = tag_hex_l2
+			L2_cache[set_value_l2][line_number]['time'] += 1
 
-			j = 0
-			for i in range(0, int(size)*2, 2):
-				L1_instruction[set_value][line_number]['block'][j] = data[i:i+2]
-				j += 1
+			j = block_value_l2
+			for i in range(block_value_l2*2, block_value_l2*2 + int(size)*2, 2):
+				if i < len(data):
+					L2_cache[set_value_l2][line_number]['block'][j] = data[i:i+2]
+					j += 1
+					continue
+				break
 
-			eviction_queue['L2'][set_value].append(line_number)
+			eviction_queue['L2'][set_value_l2].append(line_number)
+
+
 	# Looking for L2 - end
 
 def main():
@@ -285,6 +299,7 @@ def main():
 			elif trace[0] == 'M':   # data load and then data store
 				data = trace[3]
 	
+	#print(aligned_ram)
 	# printing the performance of each cache at the end of trace
 	print('L1I-hits:{} L1I-misses:{} L1I-evictions:{}'.format(performance['L1I hits'], performance['L1I misses'], performance['L1I evictions']))
 	print('L1D-hits:{} L1D-misses:{} L1D-evictions:{}'.format(performance['L1D hits'], performance['L1D misses'], performance['L1D evictions']))
