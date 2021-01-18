@@ -9,10 +9,9 @@ binary_hex = {'0000': '0', '0001': '1', '0010': '2', '0011': '3', '0100': '4', '
 			  '1000': '8', '1001': '9', '1010': 'A', '1011': 'B', '1100': 'C', '1101': 'D', '1110': 'E', '1111': 'F'}
 
 configs = {'L1 #sets': 0, 'L1 lines/set': 0, 'L1 block size': 0, 'L1 #setBits': 0, 'L1 #blockBits': 0,
-		   'L2 #sets': 0, 'L2 lines/set': 0, 'L2 block size': 0, 'L2 #setBits': 0, 'L2 #blockBits': 0
-		   }
+		   'L2 #sets': 0, 'L2 lines/set': 0, 'L2 block size': 0, 'L2 #setBits': 0, 'L2 #blockBits': 0}
 
-eviction_queue = {'L1D': {}, 'L1I': {}, 'L2': {}} 
+eviction_queue = {'L1D': {}, 'L1I': {}, 'L2': {}}
 
 performance = {'L1I hits': 0, 'L1I misses': 0, 'L1I evictions': 0,
 			   'L1D hits': 0, 'L1D misses': 0, 'L1D evictions': 0,
@@ -66,6 +65,12 @@ def create_cache(total_sets, total_lines, block_size, cache, cache_name):
 
 	return cache
 
+def normalize_address(decimal_address):
+	hex_address = list(hex(decimal_address))[2:]   # clean the hex value from initial 0x
+	while len(hex_address) != 8:
+		hex_address.insert(0, '0')
+	return ''.join(hex_address)
+
 def parse_memory(aligned_ram):
 	memory_image = ''
 	with open('ram.txt') as ram:
@@ -75,11 +80,11 @@ def parse_memory(aligned_ram):
 	bits_per_hex = 4
 	max_segment_size = (byte_size * configs['L1 block size']) // bits_per_hex
 	index = 0
-	for i in range(1, len(memory_image)):
+	for i in range(len(memory_image)):
 		if i % max_segment_size == 0:
-			aligned_ram.setdefault(str(index), memory_image[i-max_segment_size:i])
+			address = normalize_address(index)
+			aligned_ram.setdefault(address, memory_image[i-max_segment_size:i])
 			index += 1
-
 	return aligned_ram
 
 def hex_to_bin(hex_value):
@@ -101,26 +106,25 @@ def bin_to_hex(binary_number):
 	return hex_number
 
 def post_normalize_tag(tag_value, tag_length):
-	if len(tag_value) == tag_length:
+	if len(tag_value) == tag_length and tag_length % 4 == 0:
 		return tag_value
 
 	while (tag_length % 4 != 0):
 		tag_length -= 1
 	
-	new_tag_value = (tag_length - len(tag_value)) * '0'
-	new_tag_value += tag_value
+	new_tag_value = tag_value[-tag_length:]
 
 	return new_tag_value
 
-def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_time, L2_time):
-	binary_value = hex_to_bin(address)
-	decimal_value = bin_to_dec(binary_value)
-	data = aligned_ram[decimal_value]
-	set_block_index_sum = configs['L1 #setBits'] + configs['L1 #blockBits']
-	tag_binary = str(binary_value[:len(binary_value)-set_block_index_sum])
+def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
+	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address
+	data = aligned_ram[address]   # retrieving the data from the RAM
+	set_block_index_sum = configs['L1 #setBits'] + configs['L1 #blockBits']   # adding the total number of bits for set and block
+	binary_value = hex_to_bin(address)   # converting the hexadecimal address to its binary form
+	tag_binary = str(binary_value[:len(binary_value)-set_block_index_sum])   # extracting the binary tag from the address
 	set_value = '0'
 
-	if configs['L1 #setBits'] != 0:
+	if configs['L1 #setBits'] != 0:   # checking if there is a bit to represent set
 		set_value = str(binary_value[-set_block_index_sum:-configs['L1 #blockBits']])
 		set_value = bin_to_dec(set_value)
 
@@ -131,64 +135,67 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 
 	# Looking for L1I - Start
 	isFound = False
-	foundItem = ()
+	foundItem = '0'
 	# TODO: Check if set exists
 	# TODO: Starting address should be fetched from block decimal
-	for set_num, line_values in L1_instruction.items():
-		for line_num, cache_value in line_values.items():
+	if set_value in L1_cache:
+		for line_num, cache_value in L1_cache[set_value].items():
 			if cache_value['tag'] == tag_hex and cache_value['v_bit'] == 1:
 				isFound = True
-				foundItem = (set_num, line_num)
+				found_line = line_num
 
 	if isFound:
-		performance['L1I hits'] += 1
-		L1_instruction[foundItem[0]][foundItem[1]]['v_bit'] = 1
-		L1_instruction[foundItem[0]][foundItem[1]]['tag'] = tag_hex
-		L1_instruction[foundItem[0]][foundItem[1]]['time'] += 1  #no need for a variable
+		performance[cache_name + ' hits'] += 1
+		# alper when its a hit, we don't need to set everything again. the rest of this block is not necessary
+		L1_cache[set_value][found_line]['v_bit'] = 1
+		L1_cache[set_value][found_line]['tag'] = tag_hex
+		L1_cache[set_value][found_line]['time'] += 1
 		j = 0
 		for i in range(0, int(size)*2, 2):
-			L1_instruction[foundItem[0]][foundItem[1]]['block'][j] = data[i:i+2]
+			L1_cache[set_value][found_line]['block'][j] = data[i:i+2]
 			j += 1
-		L1I_time += 1
 				
 	else:
-		performance['L1I misses'] += 1
+		performance[cache_name + ' misses'] += 1
 		line_number = ''
 
-		for line_num, value in L1_instruction[set_value].items():
+		for line_num, value in L1_cache[set_value].items():   # this condition will check if there is an empty line available
 			if value['v_bit'] == 0:
 				line_number = line_num
 				break
 					
-		if line_number != '':
-			L1_instruction[set_value][line_number]['v_bit'] = 1
-			L1_instruction[set_value][line_number]['tag'] = tag_hex
-			L1_instruction[set_value][line_number]['time'] = L1I_time
+		if line_number != '':   # if there exists an empty line, then:
+			# alper when loading to L1, we can also handle loading to L2 here
+			L1_cache[set_value][line_number]['v_bit'] = 1
+			L1_cache[set_value][line_number]['tag'] = tag_hex
+			L1_cache[set_value][line_number]['time'] += 1
 
 			j = 0
 			for i in range(0, len(data), 2):
 				L1_instruction[set_value][line_number]['block'][j] = data[i:i+2]
 				j += 1
 
-			eviction_queue['L1I'][set_value].append(line_number)
-			L1I_time += 1
-		else:
-			performance['L1I evictions'] += 1
-			line_number = eviction_queue['L1I'][set_value].pop(0)
-			L1_instruction[set_value][line_number]['v_bit'] = 1
-			L1_instruction[set_value][line_number]['tag'] = tag_hex
-			L1_instruction[set_value][line_number]['time'] = L1I_time
+			eviction_queue[cache_name][set_value].append(line_number)
+
+		else:   # if there are no empty lines, then an eviction happens
+			performance[cache_name + ' evictions'] += 1
+			line_number = eviction_queue[cache_name][set_value].pop(0)
+			# alper we should use <del> here to delete the key-value pair of poped line
+			L1_cache[set_value][line_number]['v_bit'] = 1
+			L1_cache[set_value][line_number]['tag'] = tag_hex
+			L1_cache[set_value][line_number]['time'] += 1
 
 			j = 0
 			for i in range(0, int(size)*2, 2):
-				L1_instruction[set_value][line_number]['block'][j] = data[i:i+2]
+				L1_cache[set_value][line_number]['block'][j] = data[i:i+2]
 				j += 1
 
-			eviction_queue['L1I'][set_value].append(line_number)
-			L1I_time += 1
+			eviction_queue[cache_name][set_value].append(line_number)
 	# Looking for L1I - End
 
 	# Looking for L2 - Start
+
+	# alper, the looking for L2 can be handled in the above code. we dont need this part
 	isFound = False
 	foundItem = ()
 	for set_num, line_values in L2_cache.items():
@@ -201,13 +208,12 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 		performance['L2 hits'] += 1
 		L2_cache[foundItem[0]][foundItem[1]]['v_bit'] = 1
 		L2_cache[foundItem[0]][foundItem[1]]['tag'] = tag_hex
-		L2_cache[foundItem[0]][foundItem[1]]['time'] = L1I_time
+		L2_cache[foundItem[0]][foundItem[1]]['time'] += 1
 		j = 0
 		for i in range(0, int(size)*2, 2):
 			L2_cache[foundItem[0]][foundItem[1]]['block'][j] = data[i:i+2]
 			j += 1
-		L1I_time += 1
-				
+
 	else:
 		performance['L2 misses'] += 1
 		line_number = ''
@@ -220,7 +226,7 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 		if line_number != '':
 			L2_cache[set_value][line_number]['v_bit'] = 1
 			L2_cache[set_value][line_number]['tag'] = tag_hex
-			L2_cache[set_value][line_number]['time'] = L1I_time
+			L2_cache[set_value][line_number]['time'] += 1
 
 			j = 0
 			for i in range(0, len(data), 2):
@@ -228,13 +234,12 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 				j += 1
 
 			eviction_queue['L2'][set_value].append(line_number)
-			L1I_time += 1
 		else:
 			performance['L2 evictions'] += 1
 			line_number = eviction_queue['L2'][set_value].pop(0)
 			L2_cache[set_value][line_number]['v_bit'] = 1
 			L2_cache[set_value][line_number]['tag'] = tag_hex
-			L2_cache[set_value][line_number]['time'] = L1I_time
+			L2_cache[set_value][line_number]['time'] += 1
 
 			j = 0
 			for i in range(0, int(size)*2, 2):
@@ -242,8 +247,7 @@ def instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1I_t
 				j += 1
 
 			eviction_queue['L2'][set_value].append(line_number)
-			L2_time += 1
-	# Looking for L2 - eND
+	# Looking for L2 - end
 
 def main():
 	L1_data = {}
@@ -264,23 +268,16 @@ def main():
 
 	aligned_ram = parse_memory(aligned_ram)
 
-	L1I_time = 1
-	L1D_time = 1
-	L2_time = 1
-
 	with open(trace_file) as tf:
 		for line in tf:
 			trace = line.replace(',', '').strip().split()
 			address = trace[1]
 			size = trace[2]
 			if trace[0] == 'I':   # instruction load
-				instruction_load(aligned_ram, address, size, L1_instruction, L2_cache, L1D_time, L2_time)
-				
-				print(L1_instruction)
-				#print(L2_cache)
+				load(aligned_ram, address, size, L1_instruction, L2_cache, 'L1I')
 
 			elif trace[0] == 'L':   # data load
-				pass
+				load(aligned_ram, address, size, L1_data, L2_cache, 'L1D')
 
 			elif trace[0] == 'S':   # data store
 				data = trace[3]
@@ -294,14 +291,14 @@ def main():
 	print('L2-hits:{} L2-misses:{} L2-evictions:{}'.format(performance['L2 hits'], performance['L2 misses'], performance['L2 evictions']))
 
 	# exporting the content of caches to separate files
-	with open('L1-instruction.txt', 'w') as fw:
-		json.dump(L1_instruction, fw, indent=4, sort_keys=True)
+	# with open('L1-instruction.txt', 'w') as fw:
+	# 	json.dump(L1_instruction, fw, indent=4, sort_keys=True)
 
-	with open('L1-data.txt', 'w') as fw:
-		json.dump(L1_data, fw, indent=4, sort_keys=True)
+	# with open('L1-data.txt', 'w') as fw:
+	# 	json.dump(L1_data, fw, indent=4, sort_keys=True)
 
-	with open('L2.txt', 'w') as fw:
-		json.dump(L2_cache, fw, indent=4, sort_keys=True)
+	# with open('L2.txt', 'w') as fw:
+	# 	json.dump(L2_cache, fw, indent=4, sort_keys=True)
 
 main()
 
