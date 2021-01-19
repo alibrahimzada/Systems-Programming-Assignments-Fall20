@@ -119,14 +119,14 @@ def post_normalize_tag(tag_value, tag_length):
 def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 	## ALPER, IN LOAD IN ORDER TO MAKE PRINTS CONSISTENT WITH BIROL WANTS. PLEASE SEE THE MANUAL. MISSES ARE 
 	## BEING PRINTED IN LINE 1, THEN PLACE IN L2, THEN PLACE IN L1D/I. THANKS.
-	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address
 	binary_value = hex_to_bin(address)   # converting the hexadecimal address to its binary form
 
 	if len(binary_value) != 32:
 		binary_value = (32 - len(binary_value)) * '0' + binary_value
 
-	hexAddress = bin_to_hex(binary_value)  # taking the address in hex format
-	data = aligned_ram[hexAddress]   # retrieving the data from the RAM
+	address = bin_to_hex(binary_value)  # taking the address in hex format
+	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address	
+	data = aligned_ram[address]   # retrieving the data from the RAM
 
 	# L1 cache based variable declarations - Start
 	set_block_index_sum_l1 = configs['L1 #setBits'] + configs['L1 #blockBits']   # adding the total number of bits for set and block
@@ -269,7 +269,66 @@ def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 	# Looking for L2 - end
 
 def store(aligned_ram, address, size, data, L1_data, L2_cache):
-	pass
+	binary_value = hex_to_bin(address)   # converting the hexadecimal address to its binary form
+
+	if len(binary_value) != 32:
+		binary_value = (32 - len(binary_value)) * '0' + binary_value
+
+	address = bin_to_hex(binary_value)  # taking the address in hex format
+	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address
+
+	# <write-hit>
+
+	set_block_index_sum_l1 = configs['L1 #setBits'] + configs['L1 #blockBits']   # adding the total number of bits for set and block
+	tag_binary_l1 = str(binary_value[:len(binary_value)-set_block_index_sum_l1])   # extracting the binary tag from the address
+	set_value_l1 = '0'
+	block_value_l1 = int(bin_to_dec(str(binary_value[-configs['L1 #blockBits']:])))
+
+	if configs['L1 #setBits'] != 0:   # checking if there is a bit to represent set
+		set_value_l1 = str(binary_value[-set_block_index_sum_l1:-configs['L1 #blockBits']])
+		set_value_l1 = bin_to_dec(set_value_l1)
+
+	tag_binary_l1 = post_normalize_tag(tag_binary_l1, 32 - set_block_index_sum_l1)
+	tag_hex_l1 = bin_to_hex(tag_binary_l1)
+
+	isFound = False
+	# TODO: Starting address should be fetched from block decimal
+	if set_value_l1 in L1_data:
+		for line_num, cache_value in L1_data[set_value_l1].items():
+			if cache_value['tag'] == tag_hex_l1 and cache_value['v_bit'] == 1:
+				isFound = True
+				break
+
+	if isFound:
+		print('L1D hit, ', end='')
+		performance['L1D hits'] += 1
+
+		line_number = ''
+		for line_num, value in L1_data[set_value_l1].items():
+			if value['v_bit'] == 1 and value['tag'] == tag_hex_l1:
+				line_number = line_num
+				break
+		j = 0
+		for i in range(int(size)):
+			L1_data[set_value_l1][line_number]['block'][j] = data[i:i+2]
+			j += 1
+		aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number]['block'])
+
+	else:
+		print('L1D miss, ', end='')
+		performance['L1D misses'] += 1
+
+		j = 0
+		temp = L1_data[set_value_l1][line_number]['block']
+		for i in range(int(size)):
+			temp[j] = data[i:i+2]
+			j += 1
+		aligned_ram[address] = ''.join(temp)
+	# </write-hit>
+
+	# <write-miss>
+	# same thing as above... let's refactor here
+	# </write-miss>
 
 def main():
 	L1_data = {}
