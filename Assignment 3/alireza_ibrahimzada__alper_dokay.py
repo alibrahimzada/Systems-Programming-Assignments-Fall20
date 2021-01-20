@@ -255,7 +255,7 @@ def load(aligned_ram, address, size, L1_cache, L2_cache, cache_name):
 			L2_cache[set_value_l2][line_number]['tag'] = tag_hex_l2
 			L2_cache[set_value_l2][line_number]['time'] += 1
 
-			j = block_value_l2
+			j = block_value_l2 - 1
 			for i in range(block_value_l2*2, block_value_l2*2 + int(size)*2, 2):
 				if i < len(data):
 					L2_cache[set_value_l2][line_number]['block'][j] = data[i:i+2]
@@ -291,39 +291,85 @@ def store(aligned_ram, address, size, data, L1_data, L2_cache):
 	tag_binary_l1 = post_normalize_tag(tag_binary_l1, 32 - set_block_index_sum_l1)
 	tag_hex_l1 = bin_to_hex(tag_binary_l1)
 
-	isFound = False
-	# TODO: Starting address should be fetched from block decimal
+	# L2 cache based variable declarations - Start
+	set_block_index_sum_l2 = configs['L2 #setBits'] + configs['L2 #blockBits']   # adding the total number of bits for set and block
+	tag_binary_l2 = str(binary_value[:len(binary_value)-set_block_index_sum_l2])   # extracting the binary tag from the address
+	set_value_l2 = '0'
+	block_value_l2 = int(bin_to_dec(str(binary_value[-configs['L2 #blockBits']:])))
+
+	if configs['L2 #setBits'] != 0:   # checking if there is a bit to represent set
+		set_value_l2 = str(binary_value[-set_block_index_sum_l2:-configs['L2 #blockBits']])
+		set_value_l2 = bin_to_dec(set_value_l2)
+
+	tag_binary_l2 = post_normalize_tag(tag_binary_l2, 32 - set_block_index_sum_l2)
+	tag_hex_l2 = bin_to_hex(tag_binary_l2)
+	# L2 cache based variable declarations - End
+	
+	isFound_L1 = False
+	line_number_L1 = ''
 	if set_value_l1 in L1_data:
 		for line_num, cache_value in L1_data[set_value_l1].items():
 			if cache_value['tag'] == tag_hex_l1 and cache_value['v_bit'] == 1:
-				isFound = True
+				isFound_L1 = True
+				line_number_L1 = line_num
+				break
+	
+	isFound_L2 = False
+	line_number_L2 = ''
+	if set_value_l2 in L2_cache:
+		for line_num, cache_value in L2_cache[set_value_l2].items():
+			if cache_value['tag'] == tag_hex_l2 and cache_value['v_bit'] == 1:
+				isFound_L2 = True
+				line_number_L2 = line_num
 				break
 
-	if isFound:
+	if isFound_L1:
 		print('L1D hit, ', end='')
 		performance['L1D hits'] += 1
 
-		line_number = ''
-		for line_num, value in L1_data[set_value_l1].items():
-			if value['v_bit'] == 1 and value['tag'] == tag_hex_l1:
-				line_number = line_num
-				break
+		# L1 Cache Update - Start 
 		j = 0
+		if block_value_l1 != 0:
+			j = block_value_l1 - 1
 		for i in range(int(size)):
-			L1_data[set_value_l1][line_number]['block'][j] = data[i:i+2]
+			L1_data[set_value_l1][line_number_L1]['block'][j] = data[i:i+2].upper()
 			j += 1
-		aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number]['block'])
-
+		# L1 Cache Update - End
+		
+		aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number_L1]['block'])  # RAM Update
+		
 	else:
 		print('L1D miss, ', end='')
 		performance['L1D misses'] += 1
 
 		j = 0
-		temp = L1_data[set_value_l1][line_number]['block']
+		if block_value_l2 != 0:
+			j = block_value_l2 - 1
+		# RAM Update - Start
+		# temp = L1_data[set_value_l1][line_number_L1D]['block']
+		temp = aligned_ram[address]
 		for i in range(int(size)):
 			temp[j] = data[i:i+2]
 			j += 1
 		aligned_ram[address] = ''.join(temp)
+
+	# L2
+	if isFound_L2:
+		print('L2 hit, ', end='')
+		performance['L2 hits'] += 1
+		# L2 Cache Update - Start
+		j = 0
+		if block_value_l2 != 0:
+			j = block_value_l2 - 1
+		for i in range(int(size)):
+			L2_cache[set_value_l2][line_number_L2]['block'][j] = data[i:i+2].upper()
+			j += 1
+		# L2 Cache Update - End
+	else:
+		print('L2 miss, ', end='')
+		performance['L2 misses'] += 1
+		pass
+
 	# </write-hit>
 
 	# <write-miss>
@@ -367,7 +413,18 @@ def main():
 
 			elif trace[0] == 'M':   # data load and then data store
 				data = trace[3]
-	
+				
+	# if you want to see if it is working or not, check the following print statements with manual.trace
+	# START
+	# print(L1_instruction)
+	# print("------------------------------")
+	# print(L1_data)
+	# print("------------------------------")
+	# print(L2_cache)
+	# print("------------------------------")
+	# print(aligned_ram["00000000"])
+	# END
+
 	# printing the performance of each cache at the end of trace
 	print('\nL1I-hits:{} L1I-misses:{} L1I-evictions:{}'.format(performance['L1I hits'], performance['L1I misses'], performance['L1I evictions']))
 	print('L1D-hits:{} L1D-misses:{} L1D-evictions:{}'.format(performance['L1D hits'], performance['L1D misses'], performance['L1D evictions']))
