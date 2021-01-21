@@ -82,17 +82,13 @@ def normalize_address(decimal_address):   # this function normalizes a given dec
 def parse_memory():   # this function aligns the memory image according to cache block size
 	memory_image = ''
 	with open('ram.txt') as ram:   # please put the ram.txt in the same directory as .py file
-		memory_image = ram.readlines()[0].replace(' ', '')   # remove all space characters
-	
-	byte_size = 8
-	bits_per_hex = 4
-	max_segment_size = (byte_size * configs['L1 block size']) // bits_per_hex   # calculate the maximum alignment size
+		memory_image = ram.readlines()[0].split()   # remove all space characters
+
 	index = 0
 	for i in range(len(memory_image)):   # loop over memory image and align data into addresses
-		if i % max_segment_size == 0:
-			address = normalize_address(index)
-			aligned_ram.setdefault(address, memory_image[i-max_segment_size:i])
-			index += 1
+		address = normalize_address(index)
+		aligned_ram.setdefault(address, memory_image[i])
+		index += 1
 
 def hex_to_bin(hex_value):
 	binary_number = ''
@@ -130,7 +126,7 @@ def process_trace_address(address):   # this function processes a given hex addr
 
 	address = bin_to_hex(binary_value)   # converting the normalized address back in hex format
 	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address	
-	data = aligned_ram[address]   # retrieving the data from the RAM
+	data = get_address_range(address)   # retrieving the data from the RAM
 
 	return binary_value, data, address
 
@@ -171,19 +167,18 @@ def process_load_miss(cache_name, cache, set_value, tag_hex, data, block_value, 
 
 	if line_number != '':   # if there exists an empty line, then load data in there
 		j = 0
-		for i in range(0, len(data), 2):   # load all data from memory to the cache
-			cache[set_value][line_number]['block'][j] = data[i:i+2]
+		for i in range(0, len(data)):   # load all data from memory to the cache
+			cache[set_value][line_number]['block'][j] = data[i]
 			j += 1
-
 	else:   # if there are no empty lines, then an eviction happens
 		performance[cache_name + ' evictions'] += 1
 		line_number = eviction_queue[cache_name][set_value].pop(0)   # pop the line entered first
 		## ALPER I THINK WHEN EVICTION HAPPENS, ALL OF THE DATA SHOULD BE LOADED IN CACHE, AND ALL OF THE DATA
 		## FROM BLOCK SECTION OF EVICTED LINE SHOULD BE DELETED.
-		j = block_value
-		for i in range(block_value * 2, block_value * 2 + int(size) * 2, 2):
+		j = block_value - 1
+		for i in range(int(size)):
 			if i < len(data):
-				cache[set_value][line_number]['block'][j] = data[i:i+2]
+				cache[set_value][line_number]['block'][j] = data[i]
 				j += 1
 				continue
 			break
@@ -202,9 +197,10 @@ def load(address, size, L1_cache, cache_name):   # this function implements the 
 	binary_value, data, address = process_trace_address(address)   # bring the trace address in correct form
 	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)   # get the set, block and tag
 	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)   # get the set, block and tag
-
-	isFound_L1, line_number = is_hit(set_value_l1, L1_cache, tag_hex_l1)   # check if its a hit
-	isFound_L2, line_number = is_hit(set_value_l2, L2_cache, tag_hex_l2)   # check if its a hit
+	
+	print(tag_hex_l1, tag_hex_l2)
+	isFound_L1, line_number_l1 = is_hit(set_value_l1, L1_cache, tag_hex_l1)   # check if its a hit
+	isFound_L2, line_number_l2 = is_hit(set_value_l2, L2_cache, tag_hex_l2)   # check if its a hit
 
 	if isFound_L1:   # if its a hit for L1, update its hit total
 		print(cache_name + ' hit, ', end='')
@@ -220,6 +216,35 @@ def load(address, size, L1_cache, cache_name):   # this function implements the 
 	if not isFound_L2:   # if its a miss for L2, then load the data
 		process_load_miss('L2', L2_cache, set_value_l2, tag_hex_l2, data, block_value_l2, size)
 
+# This is the function to return the 8-byte block of address with given any address
+def get_address_range(address):
+	adrRange = []
+	currentValue = int(bin_to_dec(hex_to_bin(address)))  # current decimal
+
+	while currentValue % 8 != 0:  # check until it gets divisible by 8
+		currentValue -= 1
+	
+	counter = 0  # defining a counter to keep track of the count for data added to the list
+	while counter != 8:  # Iterate over 8 times to get complete block of the given address included
+		adrRange.append(aligned_ram[normalize_address(currentValue)])
+		currentValue += 1
+		counter += 1
+	
+	return adrRange  # return the value
+
+# This is the function updates the ram block of the given address with new block value
+def update_aligned_ram(address, newValue):
+	currentValue = int(bin_to_dec(hex_to_bin(address)))  # current decimal
+
+	while currentValue % 8 != 0:  # check until it gets divisible by 8
+		currentValue -= 1
+	
+	counter = 0  # defining a counter to keep track of the count for data added to the list
+	while counter != 8:  # Iterate over 8 times to get complete block of the given address included
+		aligned_ram[normalize_address(currentValue)] = newValue[counter]  # start updating the whole block
+		currentValue += 1
+		counter += 1
+
 def store(address, size, data):   # this function performs the store operation
 	binary_value, ram_data, address = process_trace_address(address)   # bring the trace address in correct form
 	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)   # get the set, block and tag
@@ -231,29 +256,35 @@ def store(address, size, data):   # this function performs the store operation
 	if isFound_L1:   # if its a hit for L1, then write to memory and cache
 		print('L1D hit, Store in L1D, RAM')
 		performance['L1D hits'] += 1
-
 		j = 0
 		if block_value_l1 != 0:
 			j = block_value_l1 - 1
-		for i in range(int(size)):
+		for i in range(0, int(size), 2):
 			L1_data[set_value_l1][line_number_L1]['block'][j] = data[i:i+2].upper()   # L1D update
 			j += 1
 		
-		aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number_L1]['block'])  # RAM update
+		#aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number_L1]['block'])  
+		update_aligned_ram(address, L1_data[set_value_l1][line_number_L1]['block'])  # RAM update
 		
 	else:   # if its a miss for L1, then only write to memory and dont load back
 		print('L1D miss, Store in RAM')
 		performance['L1D misses'] += 1
-
+		print("------------------------------------")
+		print("------------------------------------")
 		j = 0
 		if block_value_l2 != 0:
 			j = block_value_l2 - 1
 
-		temp = aligned_ram[address]
-		for i in range(int(size) * 2):
-			temp = temp[:j] + data[i] + temp[j+1:]
+		address_block = get_address_range(address)  # getting the data for address block of the given address
+		print(block_value_l2, j, address_block, data)
+		# temp = aligned_ram[address]
+		for i in range(0, int(size) * 2, 2):
+			# temp = temp[:j] + data[i] + temp[j+1:]
+			address_block[j] = data[i:i+2].upper()
 			j += 1
-		aligned_ram[address] = temp   # RAM‌ update
+		print(address_block)
+		# aligned_ram[address] = temp   # RAM‌ update
+		update_aligned_ram(address, address_block)  # RAM update
 
 	if isFound_L2:
 		print('L2 hit, Store in L2')
@@ -291,6 +322,8 @@ def main():   # the main function starts the programming by initializing the cac
 			print('\n' + line, end='')
 			trace = line.replace(',', '').strip().split()   # tokenize the line
 			address = trace[1]   # get the address
+			if int(bin_to_dec(hex_to_bin(address))) > 395264:
+				address = "00000000"
 			size = trace[2]   # get the size
 			if trace[0] == 'I':   # instruction load
 				load(address, size, L1_instruction, 'L1I')   # this function calls the load operation on L1 instruction
@@ -306,7 +339,13 @@ def main():   # the main function starts the programming by initializing the cac
 				data = trace[3]
 				load(address, size, L1_data, 'L1D')   # this function calls the load operation on L1 data
 				store(address, size, data)   # this function calls the store operation on L1 data
-				
+			
+			print(L1_instruction)
+			print("------------------------------")
+			print(L1_data)
+			print("------------------------------")
+			print(L2_cache)
+			print("------------------------------")
 	# if you want to see if it is working or not, check the following print statements with manual.trace
 	# START
 	# print(L1_instruction)
@@ -315,7 +354,6 @@ def main():   # the main function starts the programming by initializing the cac
 	# print("------------------------------")
 	# print(L2_cache)
 	# print("------------------------------")
-	# print(aligned_ram["00000000"])
 	# END
 
 	# printing the performance of each cache at the end of trace
