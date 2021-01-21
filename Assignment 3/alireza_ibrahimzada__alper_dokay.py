@@ -161,24 +161,25 @@ def is_hit(set_value, cache, tag_hex):   # this function looks a cache for a pos
 	return isFound, line_number
 
 def process_load_miss(cache_name, cache, set_value, tag_hex, data, block_value, size):
-	performance[cache_name + ' misses'] += 1
+	performance[cache_name + ' misses'] += 1   # increment the miss value of cache
 	line_number = ''
 
 	for line_num, value in cache[set_value].items():   # this condition will check if there is an empty line available
-		if value['v_bit'] == 0:
+		if value['v_bit'] == 0:   # check if line is available, if so then break
 			line_number = line_num
 			break
-				
-	if line_number != '':   # if there exists an empty line, then:
+
+	if line_number != '':   # if there exists an empty line, then load data in there
 		j = 0
-		for i in range(0, len(data), 2):
+		for i in range(0, len(data), 2):   # load all data from memory to the cache
 			cache[set_value][line_number]['block'][j] = data[i:i+2]
 			j += 1
 
 	else:   # if there are no empty lines, then an eviction happens
 		performance[cache_name + ' evictions'] += 1
-		line_number = eviction_queue[cache_name][set_value].pop(0)
-
+		line_number = eviction_queue[cache_name][set_value].pop(0)   # pop the line entered first
+		## ALPER I THINK WHEN EVICTION HAPPENS, ALL OF THE DATA SHOULD BE LOADED IN CACHE, AND ALL OF THE DATA
+		## FROM BLOCK SECTION OF EVICTED LINE SHOULD BE DELETED.
 		j = block_value
 		for i in range(block_value * 2, block_value * 2 + int(size) * 2, 2):
 			if i < len(data):
@@ -189,6 +190,7 @@ def process_load_miss(cache_name, cache, set_value, tag_hex, data, block_value, 
 
 	print('{} miss, Place in {} set {}'.format(cache_name, cache_name, set_value))
 
+	# update the performance metrics
 	cache[set_value][line_number]['v_bit'] = 1
 	cache[set_value][line_number]['tag'] = tag_hex
 	if cache_name != 'L2':
@@ -197,36 +199,36 @@ def process_load_miss(cache_name, cache, set_value, tag_hex, data, block_value, 
 	eviction_queue[cache_name][set_value].append(line_number)
 
 def load(address, size, L1_cache, cache_name):   # this function implements the load operation
-	binary_value, data, address = process_trace_address(address)
-	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)
-	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)
+	binary_value, data, address = process_trace_address(address)   # bring the trace address in correct form
+	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)   # get the set, block and tag
+	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)   # get the set, block and tag
 
-	isFound_L1, line_number = is_hit(set_value_l1, L1_cache, tag_hex_l1)
-	isFound_L2, line_number = is_hit(set_value_l2, L2_cache, tag_hex_l2)
+	isFound_L1, line_number = is_hit(set_value_l1, L1_cache, tag_hex_l1)   # check if its a hit
+	isFound_L2, line_number = is_hit(set_value_l2, L2_cache, tag_hex_l2)   # check if its a hit
 
-	if isFound_L1:
+	if isFound_L1:   # if its a hit for L1, update its hit total
 		print(cache_name + ' hit, ', end='')
 		performance[cache_name + ' hits'] += 1
 
-	if isFound_L2:
+	if isFound_L2:   # if its a hit for L2, update its hit total
 		print('L2 hit')
 		performance['L2 hits'] += 1
 
-	if not isFound_L1:
+	if not isFound_L1:   # if its a miss for L1, then load the data
 		process_load_miss(cache_name, L1_cache, set_value_l1, tag_hex_l1, data, block_value_l1, size)
 
-	if not isFound_L2:
+	if not isFound_L2:   # if its a miss for L2, then load the data
 		process_load_miss('L2', L2_cache, set_value_l2, tag_hex_l2, data, block_value_l2, size)
 
-def store(address, size, data):
-	binary_value, ram_data, address = process_trace_address(address)
-	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)
-	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)
+def store(address, size, data):   # this function performs the store operation
+	binary_value, ram_data, address = process_trace_address(address)   # bring the trace address in correct form
+	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)   # get the set, block and tag
+	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)   # get the set, block and tag
 	
-	isFound_L1, line_number_L1 = is_hit(set_value_l1, L1_data, tag_hex_l1)
-	isFound_L2, line_number_L2 = is_hit(set_value_l2, L2_cache, tag_hex_l2)
+	isFound_L1, line_number_L1 = is_hit(set_value_l1, L1_data, tag_hex_l1)   # check if its a hit
+	isFound_L2, line_number_L2 = is_hit(set_value_l2, L2_cache, tag_hex_l2)   # check if its a hit
 
-	if isFound_L1:
+	if isFound_L1:   # if its a hit for L1, then write to memory and cache
 		print('L1D hit, Store in L1D, RAM')
 		performance['L1D hits'] += 1
 
@@ -239,7 +241,7 @@ def store(address, size, data):
 		
 		aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number_L1]['block'])  # RAM update
 		
-	else:
+	else:   # if its a miss for L1, then only write to memory and dont load back
 		print('L1D miss, Store in RAM')
 		performance['L1D misses'] += 1
 
