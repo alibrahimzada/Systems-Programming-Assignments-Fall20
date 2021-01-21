@@ -248,10 +248,10 @@ def store(address, size, data):
 			j = block_value_l2 - 1
 
 		temp = aligned_ram[address]
-		for i in range(int(size)):
-			temp[j] = data[i:i+2]
+		for i in range(int(size) * 2):
+			temp = temp[:j] + data[i] + temp[j+1:]
 			j += 1
-		aligned_ram[address] = ''.join(temp)   # RAM‌ update
+		aligned_ram[address] = temp   # RAM‌ update
 
 	if isFound_L2:
 		print('L2 hit, Store in L2')
