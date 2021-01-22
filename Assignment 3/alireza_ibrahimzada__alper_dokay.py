@@ -1,3 +1,6 @@
+_author_ = 'Ali Reza Ibrahimzada'
+_author_ = 'Alper Dokay'
+
 import sys
 import math
 import json
@@ -289,9 +292,11 @@ def store(address, size, data):   # this function performs the store operation
 		j = 0
 		if block_value_l2 != 0:
 			j = block_value_l2 - 1
-		for i in range(int(size)):
-			L2_cache[set_value_l2][line_number_L2]['block'][j] = data[i:i+2].upper()   # L2 update
-			j += 1
+		print(data, L2_cache[set_value_l2][line_number_L2]['block'])
+		for i in range(0, int(size) * 2, 2):
+			if j < len(L2_cache[set_value_l2][line_number_L2]['block']):
+				L2_cache[set_value_l2][line_number_L2]['block'][j] = data[i:i+2].upper()   # L2 update
+				j += 1
 
 	else:
 		print('L2 miss')
@@ -338,7 +343,6 @@ def main():   # the main function starts the programming by initializing the cac
 	print('\nL1I-hits:{} L1I-misses:{} L1I-evictions:{}'.format(performance['L1I hits'], performance['L1I misses'], performance['L1I evictions']))
 	print('L1D-hits:{} L1D-misses:{} L1D-evictions:{}'.format(performance['L1D hits'], performance['L1D misses'], performance['L1D evictions']))
 	print('L2-hits:{} L2-misses:{} L2-evictions:{}'.format(performance['L2 hits'], performance['L2 misses'], performance['L2 evictions']))
-
 	# exporting the content of caches to separate files
 	with open('L1-instruction.txt', 'w') as fw:
 		json.dump(L1_instruction, fw, indent=4, sort_keys=True)
