@@ -1,5 +1,5 @@
-_author_ = 'Ali Reza Ibrahimzada'
-_author_ = 'Alper Dokay'
+__author__ = 'Ali Reza Ibrahimzada'
+__author__ = 'Alper Dokay'
 
 import sys
 import math
@@ -279,11 +279,11 @@ def store(address, size, data):   # this function performs the store operation
 		if block_value_l2 != 0:
 			j = block_value_l2 - 1
 
-		address_block = get_address_range(address, "L2")  # getting the data for address block of the given address
+		address_block = get_address_range(address, 'L1')  # getting the data for address block of the given address
 		for i in range(0, int(size) * 2, 2):
 			address_block[j] = data[i:i+2].upper()
 			j += 1
-		update_aligned_ram(address, address_block, "L2")  # RAM update
+		update_aligned_ram(address, address_block, 'L1')  # RAM update
 
 	if isFound_L2:   # if its found in L2, then increase its hits and update L2
 		print('L2 hit, Store in L2')
