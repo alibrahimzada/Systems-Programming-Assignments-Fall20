@@ -279,7 +279,7 @@ def store(address, size, data):   # this function performs the store operation
 		if block_value_l2 != 0:
 			j = block_value_l2 - 1
 
-		address_block = get_address_range(address, "L1")  # getting the data for address block of the given address
+		address_block = get_address_range(address, "L2")  # getting the data for address block of the given address
 		for i in range(0, int(size) * 2, 2):
 			address_block[j] = data[i:i+2].upper()
 			j += 1
@@ -292,11 +292,13 @@ def store(address, size, data):   # this function performs the store operation
 		j = 0
 		if block_value_l2 != 0:
 			j = block_value_l2 - 1
-		print(data, L2_cache[set_value_l2][line_number_L2]['block'])
+		
 		for i in range(0, int(size) * 2, 2):
 			if j < len(L2_cache[set_value_l2][line_number_L2]['block']):
 				L2_cache[set_value_l2][line_number_L2]['block'][j] = data[i:i+2].upper()   # L2 update
 				j += 1
+				continue
+			break
 
 	else:
 		print('L2 miss')
