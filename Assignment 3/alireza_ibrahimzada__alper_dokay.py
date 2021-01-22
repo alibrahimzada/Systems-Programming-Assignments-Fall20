@@ -125,10 +125,10 @@ def process_trace_address(address):   # this function processes a given hex addr
 		binary_value = (32 - len(binary_value)) * '0' + binary_value
 
 	address = bin_to_hex(binary_value)   # converting the normalized address back in hex format
-	aligned_ram.setdefault(address, '0' * (configs['L1 block size'] * 2))   # set the value of an address higher than maximum representable address	
-	data = get_address_range(address)   # retrieving the data from the RAM
+	aligned_ram.setdefault(address, '00')   # set the value of an address higher than maximum representable address	
+	# data = get_address_range(address, cache_name)   # retrieving the data from the RAM
 
-	return binary_value, data, address
+	return binary_value, address
 
 def manipulate_trace_address(cache_name, binary_value):   # this function calculates the set, block and tag values from a given binary address
 	set_block_index_sum = configs[cache_name +' #setBits'] + configs[cache_name + ' #blockBits']   # adding the total number of bits for set and block
@@ -194,13 +194,16 @@ def process_load_miss(cache_name, cache, set_value, tag_hex, data, block_value, 
 	eviction_queue[cache_name][set_value].append(line_number)
 
 def load(address, size, L1_cache, cache_name):   # this function implements the load operation
-	binary_value, data, address = process_trace_address(address)   # bring the trace address in correct form
+	binary_value, address = process_trace_address(address)   # bring the trace address in correct form
 	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)   # get the set, block and tag
 	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)   # get the set, block and tag
 	
 	print(tag_hex_l1, tag_hex_l2)
 	isFound_L1, line_number_l1 = is_hit(set_value_l1, L1_cache, tag_hex_l1)   # check if its a hit
 	isFound_L2, line_number_l2 = is_hit(set_value_l2, L2_cache, tag_hex_l2)   # check if its a hit
+
+	data_l1 = get_address_range(address, "L1")
+	data_l2 = get_address_range(address, "L2")
 
 	if isFound_L1:   # if its a hit for L1, update its hit total
 		print(cache_name + ' hit, ', end='')
@@ -211,21 +214,21 @@ def load(address, size, L1_cache, cache_name):   # this function implements the 
 		performance['L2 hits'] += 1
 
 	if not isFound_L1:   # if its a miss for L1, then load the data
-		process_load_miss(cache_name, L1_cache, set_value_l1, tag_hex_l1, data, block_value_l1, size)
+		process_load_miss(cache_name, L1_cache, set_value_l1, tag_hex_l1, data_l1, block_value_l1, size)
 
 	if not isFound_L2:   # if its a miss for L2, then load the data
-		process_load_miss('L2', L2_cache, set_value_l2, tag_hex_l2, data, block_value_l2, size)
+		process_load_miss('L2', L2_cache, set_value_l2, tag_hex_l2, data_l2, block_value_l2, size)
 
 # This is the function to return the 8-byte block of address with given any address
-def get_address_range(address):
+def get_address_range(address, cache_name):
 	adrRange = []
 	currentValue = int(bin_to_dec(hex_to_bin(address)))  # current decimal
-
-	while currentValue % 8 != 0:  # check until it gets divisible by 8
+	
+	while currentValue % configs[cache_name + " block size"] != 0:  # check until it gets divisible by 8
 		currentValue -= 1
 	
 	counter = 0  # defining a counter to keep track of the count for data added to the list
-	while counter != 8:  # Iterate over 8 times to get complete block of the given address included
+	while counter != configs[cache_name + " block size"]:  # Iterate over 8 times to get complete block of the given address included
 		adrRange.append(aligned_ram[normalize_address(currentValue)])
 		currentValue += 1
 		counter += 1
@@ -233,20 +236,20 @@ def get_address_range(address):
 	return adrRange  # return the value
 
 # This is the function updates the ram block of the given address with new block value
-def update_aligned_ram(address, newValue):
+def update_aligned_ram(address, newValue, cache_name):
 	currentValue = int(bin_to_dec(hex_to_bin(address)))  # current decimal
 
-	while currentValue % 8 != 0:  # check until it gets divisible by 8
+	while currentValue % configs[cache_name + " block size"] != 0:  # check until it gets divisible by 8
 		currentValue -= 1
 	
 	counter = 0  # defining a counter to keep track of the count for data added to the list
-	while counter != 8:  # Iterate over 8 times to get complete block of the given address included
+	while counter != configs[cache_name + " block size"]:  # Iterate over 8 times to get complete block of the given address included
 		aligned_ram[normalize_address(currentValue)] = newValue[counter]  # start updating the whole block
 		currentValue += 1
 		counter += 1
 
 def store(address, size, data):   # this function performs the store operation
-	binary_value, ram_data, address = process_trace_address(address)   # bring the trace address in correct form
+	binary_value, address = process_trace_address(address)   # bring the trace address in correct form
 	set_value_l1, block_value_l1, tag_hex_l1 = manipulate_trace_address('L1', binary_value)   # get the set, block and tag
 	set_value_l2, block_value_l2, tag_hex_l2 = manipulate_trace_address('L2', binary_value)   # get the set, block and tag
 	
@@ -264,7 +267,7 @@ def store(address, size, data):   # this function performs the store operation
 			j += 1
 		
 		#aligned_ram[address] = ''.join(L1_data[set_value_l1][line_number_L1]['block'])  
-		update_aligned_ram(address, L1_data[set_value_l1][line_number_L1]['block'])  # RAM update
+		update_aligned_ram(address, L1_data[set_value_l1][line_number_L1]['block'], "L1")  # RAM update
 		
 	else:   # if its a miss for L1, then only write to memory and dont load back
 		print('L1D miss, Store in RAM')
@@ -275,7 +278,7 @@ def store(address, size, data):   # this function performs the store operation
 		if block_value_l2 != 0:
 			j = block_value_l2 - 1
 
-		address_block = get_address_range(address)  # getting the data for address block of the given address
+		address_block = get_address_range(address, "L1")  # getting the data for address block of the given address
 		print(block_value_l2, j, address_block, data)
 		# temp = aligned_ram[address]
 		for i in range(0, int(size) * 2, 2):
@@ -284,7 +287,7 @@ def store(address, size, data):   # this function performs the store operation
 			j += 1
 		print(address_block)
 		# aligned_ram[address] = temp   # RAM‌ update
-		update_aligned_ram(address, address_block)  # RAM update
+		update_aligned_ram(address, address_block, "L2")  # RAM update
 
 	if isFound_L2:
 		print('L2 hit, Store in L2')
